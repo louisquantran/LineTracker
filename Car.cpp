@@ -1,211 +1,138 @@
-const int sensorWeight[8] = { -15, -14, -12, 8, 8, 12, 14, 15 };
+#include <ECE3.h>
 
-// Motor constant
-const int left_nslp_pin  = 31;  // nslp = not sleep --> set high --> digitalWrite
-const int left_dir_pin   = 29;  // control direction of motor --> digitalWrite
-const int left_pwm_pin   = 40;  // use to control motor speed --> analogWrite
+const double sensorWeight[8] = { -15.0, -14.0, -12.0, 8.0, 8.0, 12.0, 14.0, 15.0 };
+uint16_t min[8] = { 667,	620,	714, 620, 550,	573,	550,	738 };
+uint16_t max[8] = { 1833, 1377,	1786,	1229,	1370,	1158,	896, 1762 };
+
+uint16_t sensorReadings[8] = {0};
+
+// Motor constants
+const int left_nslp_pin  = 31;
+const int left_dir_pin   = 29;
+const int left_pwm_pin   = 40;
 const int right_nslp_pin = 11;
 const int right_dir_pin  = 30;
 const int right_pwm_pin  = 39;
 
-// Sensor Pins
-const int sensor1 = 65; // left side of car
-const int sensor2 = 48;
-const int sensor3 = 64;
-const int sensor4 = 47;
-const int sensor5 = 52;
-const int sensor6 = 68;
-const int sensor7 = 53;
-const int sensor8 = 69; // right side of car
+float Kp = 0.03; // Proportional gain, adjust as necessary
+float Kd = 0.01;  // Derivative gain, adjust as necessary
+float Ki = 0.0;  // Integral gain, adjust as necessary
 
-// LED Constants
-const int IR_LED_odd = 45;
-const int IR_LED_even = 61;
+int P, I, D, previousError = 0, error;
 
-// Speed Constants
-const int speed = 75;
-const int turnSpeed = 75;
-const int dirScale = 5;
+// Additional variables for line detection and turning
+int lineCount = 0;
 
-// Delay Constants
-const int delayA = 50;
-const int delayB = 75;
-const int timeToTurn = 700;
-
-// Past Directions
-const int errorThreshold = 50;
-
-// PID Constants
-const int kP = 10;
-const int kD = 50;
-
-// Variables
-float pastDir;
-float pastMotorSpeed;
-int lineCnt;
-int pastReadingCnt;
-int base[8] = {0};
 void setup() {
-    for(int i = 0; i < 5; i++)
-    {
-        base[0] = digitalRead(sensor1);
-        base[1] = digitalRead(sensor2);
-        base[2] = digitalRead(sensor3);
-        base[3] = digitalRead(sensor4);
-        base[4] = digitalRead(sensor5);
-        base[5] = digitalRead(sensor6);
-        base[6] = digitalRead(sensor7);
-        base[7] = digitalRead(sensor8);
-        delay(5);
-    }
-
-    for(int i = 0; i < 8; i++)
-    {
-        base[i] /= 5;
-    }
+    ECE3_Init();
 
     pinMode(left_nslp_pin, OUTPUT);
     pinMode(left_dir_pin, OUTPUT);
     pinMode(left_pwm_pin, OUTPUT);
-
     pinMode(right_nslp_pin, OUTPUT);
     pinMode(right_dir_pin, OUTPUT);
     pinMode(right_pwm_pin, OUTPUT);
 
     digitalWrite(left_nslp_pin, HIGH);
     digitalWrite(left_dir_pin, LOW);
-
     digitalWrite(right_nslp_pin, HIGH);
     digitalWrite(right_dir_pin, LOW);
 
-    pinMode(IR_LED_odd, OUTPUT);
-    pinMode(IR_LED_even, OUTPUT);
-
-    digitalWrite(IR_LED_odd, HIGH);
-    digitalWrite(IR_LED_even, HIGH);
-    
-    pastDir = 0;
-    lineCnt = 0;
-    pastReadingCnt = 0;
+    // Set initial speed directly
+    delay(2000);
+    analogWrite(left_pwm_pin, 40);
+    analogWrite(right_pwm_pin, 40);
+    delay(100);
 }
 
 void loop() {
-    pinMode(sensor1, OUTPUT);
-    pinMode(sensor2, OUTPUT);
-    pinMode(sensor3, OUTPUT);
-    pinMode(sensor4, OUTPUT);
-    pinMode(sensor5, OUTPUT);
-    pinMode(sensor6, OUTPUT);
-    pinMode(sensor7, OUTPUT);
-    pinMode(sensor8, OUTPUT);
+      ECE3_read_IR(sensorReadings);
 
-    delay(delayA);
+    analogWrite(right_pwm_pin, 0);
+    analogWrite(left_pwm_pin, 0);
 
-    digitalWrite(sensor1, HIGH);
-    digitalWrite(sensor2, HIGH);
-    digitalWrite(sensor3, HIGH);
-    digitalWrite(sensor4, HIGH);
-    digitalWrite(sensor5, HIGH);
-    digitalWrite(sensor6, HIGH);
-    digitalWrite(sensor7, HIGH);
-    digitalWrite(sensor8, HIGH);
+  // Calculate PID values
+  error = sensorFusion(sensorReadings);
+  P = error;
+  I += error;
+  D = error - previousError;
+  int PIDvalue = (Kp * P) + (Ki * I) + (Kd * D);
+  previousError = error;
 
-    delay(delayB);
-    
-    pinMode(sensor1, INPUT);
-    pinMode(sensor2, INPUT);
-    pinMode(sensor3, INPUT);
-    pinMode(sensor4, INPUT);
-    pinMode(sensor5, INPUT);
-    pinMode(sensor6, INPUT);
-    pinMode(sensor7, INPUT);
-    pinMode(sensor8, INPUT);
+  int leftSpd = constrain(60 - PIDvalue, 0, 60);
+  int rightSpd = constrain(60 + PIDvalue, 0, 60);
 
-    // Calculate the position based on the weights
-    int sensorReading1 = digitalRead(sensor1);
-    int sensorReading2 = digitalRead(sensor2);
-    int sensorReading3 = digitalRead(sensor3);
-    int sensorReading4 = digitalRead(sensor4);
-    int sensorReading5 = digitalRead(sensor5);
-    int sensorReading6 = digitalRead(sensor6);
-    int sensorReading7 = digitalRead(sensor7);
-    int sensorReading8 = digitalRead(sensor8);
+  analogWrite(left_pwm_pin, leftSpd);
+  analogWrite(right_pwm_pin, rightSpd);
 
-    sensorReading1 -= base[0];
-    sensorReading2 -= base[1];
-    sensorReading3 -= base[2];
-    sensorReading4 -= base[3];
-    sensorReading5 -= base[4];
-    sensorReading6 -= base[5];
-    sensorReading7 -= base[6];
-    sensorReading8 -= base[7];
-
-    float error = sensorReading1 * sensorWeight[0] + sensorReading2 * sensorWeight[1]
-                    + sensorReading3 * sensorWeight[2] + sensorReading4 * sensorWeight[3]
-                    + sensorReading5 * sensorWeight[4] + sensorReading6 * sensorWeight[5]
-                    + sensorReading7 * sensorWeight[6] + sensorReading8 * sensorWeight[7];
-        
-    int readingCnt = sensorReading1 + sensorReading2 + sensorReading3 + sensorReading4 
-                    + sensorReading5 + sensorReading6 + sensorReading7 + sensorReading8;
-
-    float motorSpeed = kP * error + kD * (error - pastDir);
-
-    // if the car is seeing the line, so all the sensors are lit up
-    if(readingCnt >= 6 && pastReadingCnt < 6)
+    int Black = 0;
+    for (int i = 0; i < 8; i++)
     {
-        lineCnt++;
-        switch(lineCnt)
+        if (sensorReadings[i] > 950) 
         {
-            // Seeing the line at the end of the track and turning around
-            case 1:
-                digitalWrite(left_dir_pin, HIGH);
-                analogWrite(right_pwm_pin, turnSpeed);
-                analogWrite(left_pwm_pin, turnSpeed);
-                delay(timeToTurn);
-                digitalWrite(left_dir_pin, LOW);
-                break;
-            // Seeing the line at the end of the track and stopping
-            case 2:
-                analogWrite(right_pwm_pin, 0);
-                analogWrite(left_pwm_pin, 0);
-                pastMotorSpeed = 0;
-                delay(50);
-                break;
-            default:
-                break;
+            ++Black;
         }
     }
 
-    // if the car is seeing more than 3 sensor values, it is probably bogus and should not be counted
-    else if(readingCnt > 4)
+    if (Black > 6)
     {
-        motorSpeed = pastMotorSpeed;
+        lineCount++;
+        analogWrite(right_pwm_pin, 50);
+        analogWrite(left_pwm_pin, 50);
+        delay(500);
     }
 
-    // the car sees the right line or none at all
-    else if(lineCnt != 2)
-    {
-        // if the car is turning to the left a significant amount
-        if(motorSpeed < -30)
-        {
-            analogWrite(right_pwm_pin, speed + motorSpeed);
-            analogWrite(left_pwm_pin, 0.6 * (speed - motorSpeed));
+        switch (lineCount) {
+        // case 1: // First encounter with the line
+        //     analogWrite(right_pwm_pin, 50);
+        //     analogWrite(left_pwm_pin, 50);
+        //     delay(250);
+        //     analogWrite(right_pwm_pin, 15);
+        //     digitalWrite(right_dir_pin, HIGH);
+        //     analogWrite(left_pwm_pin, 50);
+        //     delay(5000);
+        //     digitalWrite(right_dir_pin, LOW);
+        //     break;
+        case 3: // Second encounter with the line
+            analogWrite(right_pwm_pin, 50);
+            digitalWrite(right_dir_pin, LOW);
+            analogWrite(left_pwm_pin, 50);
+            digitalWrite(left_dir_pin, HIGH);
+            delay(1750);
+            analogWrite(right_pwm_pin, 50);
+            digitalWrite(right_dir_pin, LOW);
+            analogWrite(left_pwm_pin, 50);
+            digitalWrite(left_dir_pin, LOW);
+            delay(1000);
+            break;
+        // case 4:
+        //     analogWrite(right_pwm_pin, 50);
+        //     analogWrite(left_pwm_pin, 50);
+        //     delay(250);
+        //     analogWrite(left_pwm_pin, 15);
+        //     digitalWrite(left_dir_pin, HIGH);
+        //     analogWrite(right_pwm_pin, 50);
+        //     delay(5000);
+        //     digitalWrite(left_dir_pin, LOW);
+        //     break;
+        case 6:
+            analogWrite(right_pwm_pin, 0);
+            analogWrite(left_pwm_pin, 0);
+            delay(10000);
+            break;
+        default:
+            break;
         }
-        // if the car is turning to the right a signifcant amount
-        else if(motorSpeed > 30)
-        {
-            analogWrite(right_pwm_pin, 0.6 * (speed + motorSpeed));
-            analogWrite(left_pwm_pin, speed - motorSpeed);
-        }
-        // if the car is not making a sharp turn
-        else
-        {
-            analogWrite(right_pwm_pin, speed + motorSpeed);
-            analogWrite(left_pwm_pin, speed - motorSpeed);
-        }
-    }
+}
 
-    pastDir = error;
-    pastMotorSpeed = motorSpeed;
-    pastReadingCnt = readingCnt;
+int sensorFusion(uint16_t sensorValues[]) {
+    double fusion_value  = 0;
+    const int numSensors = 8; // 
+
+    for (int i = 0; i < numSensors; i++) {
+        //double denom = max[i] - min[i];
+        //fusion_value += val * 1000 * weighting[i]/ denom ;
+        fusion_value += (sensorValues[i] - min[i]) * 1000/(max[i] - min[i]) *sensorWeight[i];
+    }
+  return fusion_value;
 }
