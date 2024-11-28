@@ -29,7 +29,6 @@ int black = 0;
 int turn = 0;
 
 void setup() {
-    Serial.begin(9600);
     ECE3_Init();
 
     pinMode(left_nslp_pin, OUTPUT);
@@ -52,17 +51,19 @@ void setup() {
 }
 
 void loop() {
-      ECE3_read_IR(sensorReadings);
-
+    ECE3_read_IR(sensorReadings);
+    
     analogWrite(right_pwm_pin, 0);
     analogWrite(left_pwm_pin, 0);
 
-  // Calculate PID values
-  error = sensorFusion(sensorReadings);
-  previousError = error;
-  int leftSpd = baseSpd;
-  int rightSpd = baseSpd;
-
+    // Calculate PID values
+    error = sensorFusion(sensorReadings);
+    P = error;
+    I += error;
+    D = error - previousError;
+    int leftSpd = baseSpd;
+    int rightSpd = baseSpd;
+    float spdSignal = (Kp * P) + (Ki * I) + (Kd * D);
  
 
     int Black = 0;
@@ -75,8 +76,8 @@ void loop() {
     }
 
     bool finishTurn = false;
-    int final_leftSpd = leftSpd - (Kp * error);
-    int final_rightSpd = rightSpd + (Kp * error); 
+    int final_leftSpd = leftSpd - spdSignal;
+    int final_rightSpd = rightSpd + spdSignal; 
     if (Black > 6 && turnAround == 0)
     {
         ++lineCount;
@@ -90,75 +91,64 @@ void loop() {
     {
         ++lineCount;
     }
-    if (lineCount == 2) turnAround = 1;
-        if (lineCount == 3 && turn == 0)
-        {
-            ++turn;
-            turnAround = 0;
-            analogWrite(left_pwm_pin, 0);
-            analogWrite(right_pwm_pin, 0);
-            delay(500);
-            donut();
-        }
-        else if (lineCount == 6 && turn == 1)
-        {
-            analogWrite(left_pwm_pin, 0);
-            analogWrite(right_pwm_pin, 0);
-            delay(10000);
-            turn = 0;
-        }
-        else
-        {
-            analogWrite(left_pwm_pin, abs(final_leftSpd));
-            analogWrite(right_pwm_pin, abs(final_rightSpd));
-        }
-        if (final_leftSpd < 0) {
-          digitalWrite(left_dir_pin, HIGH);  
-        }
-        else {
-          digitalWrite(left_dir_pin, LOW);  
-        }
-
-        if (final_rightSpd < 0) {
-          digitalWrite(right_dir_pin, HIGH);  
-        }
-        else {
-          digitalWrite(right_dir_pin, LOW);  
-        }
+    if (lineCount == 2) 
+    { 
+        turnAround = 1;
+    }
+    if (lineCount == 3 && turn == 0)
+    {
+        ++turn;
+        turnAround = 0;
+        analogWrite(left_pwm_pin, 0);
+        analogWrite(right_pwm_pin, 0);
+        delay(500);
+        donut();
+    }
+    else if (lineCount == 6 && turn == 1)
+    {
+        analogWrite(left_pwm_pin, 0);
+        analogWrite(right_pwm_pin, 0);
+        delay(10000);
+        turn = 0;
+    }
+    else
+    {
+        analogWrite(left_pwm_pin, abs(final_leftSpd));
+        analogWrite(right_pwm_pin, abs(final_rightSpd));
+    }
+    if (final_leftSpd < 0) 
+    {
+        digitalWrite(left_dir_pin, HIGH);  
+    }
+    else 
+    {
+        digitalWrite(left_dir_pin, LOW);  
+    }
+    if (final_rightSpd < 0) 
+    {
+        digitalWrite(right_dir_pin, HIGH);  
+    }
+    else 
+    {
+        digitalWrite(right_dir_pin, LOW);  
+    }
 }
 
 int sensorFusion(uint16_t sensorValues[]) {
     double fusion_value  = 0;
-    const int numSensors = 8; 
+    const int numSensors = 8; // 
 
-    for (int i = 0; i < numSensors; i++) {
+    for (int i = 0; i < numSensors; i++) 
+    {
         fusion_value += ((sensorValues[i] - mins[i]) * 1000/(maxs[i])) * (sensorWeight[i]/8.0);
     }
   return fusion_value;
 }
 
-// Testing purposes
-// int newFusion(uint16_t arr[]) {
-//   int i_arr[8] = {0};
-//   for (int i = 0; i < 8; i++) {
-//     i_arr[i] = arr[i];  
-//   }
-//   double error = 0;
-//   int weights[] = {-4, -3, -2, -1, 1, 2, 3, 4};
-//   for (int i = 0; i < 8; i++) {
-//       error += i_arr[i] * weights[i];
-//   }
-//   return error;
-// }
 void donut() {
     analogWrite(right_pwm_pin, 50);
     digitalWrite(right_dir_pin, LOW);
     analogWrite(left_pwm_pin, 50);
     digitalWrite(left_dir_pin, HIGH);
     delay(1000);
-    // analogWrite(right_pwm_pin, 50);
-    // digitalWrite(right_dir_pin, LOW);
-    // analogWrite(left_pwm_pin, 50);
-    // digitalWrite(left_dir_pin, LOW);
-    // delay(200);
 }
